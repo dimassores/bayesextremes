@@ -1,0 +1,7 @@
+arviz
+matplotlib
+numpy
+pandas
+theano-pymc
+pymc3
+notebook
