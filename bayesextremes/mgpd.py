@@ -23,9 +23,7 @@ class MGPD:
         self.csi_array = np.array([[1]], dtype = np.float32)
         self.sigma_array = np.array([[1]], dtype = np.float32)
         
-        # latent values used in metropolis hastings steps
-        self.M = max(self.data)
-        self.v_csi = 1
+
 
     def log_mpgd_posterior_kernel(self, data, p, mu, eta, u, csi, sigma, a_prior, b_prior, c_prior, d_prior, mu_u, sigma_u):
 
@@ -67,6 +65,7 @@ class MGPD:
                         
         return gm_kernel + gpd_kernel
     
+    #TODO: refact of metropolis step to be able to compute kernels
     def metropolis_step(self, prop, current, posterior_kernel, proposed_kernel):
         '''
         log scaled only for both posterior kernel and proposed kernel
@@ -85,20 +84,21 @@ class MGPD:
         else:
             return current
 
-    def fit(self):
+    def draw_csi(self, s):
+            # latent values used in metropolis hastings steps
+            self.M = max(self.data)
+            self.v_csi = np.sqrt(1)
 
-        for s in range(self.n_iteration):
-
-            #TODO: define a different confunction for each parameter
-            # draw from csi
-            inf_limit = -self.sigma[s]/(self.M - self.u[s])
+            # set auxiliar parameter
+            inf_limit = -self.sigma_array[s]*(self.M - self.u_array[s])
             sup_limit = np.inf
             csi_posterior_kernel = {}
             csi_proposed_kernel = {}
 
-            print(csi)
+            # draw potencial s+1
             csi_potential = truncnorm.rvs(a = inf_limit, b = sup_limit, loc=self.csi_array[s], scale=self.v_csi, size=1)
-            print(csi_potential)
+
+            # define metropolis ratio terms
             csi_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s], 
                                                                         self.csi_array[s], self.sigma_array[s], self.prior_values['a_prior'], 
                                                                         self.prior_values['b_prior'], self.prior_values['c_prior'], 
@@ -111,14 +111,78 @@ class MGPD:
                                                                         self.prior_values['d_prior'], self.prior_values['mu_u'], 
                                                                         self.prior_values['sigma_u'])
             
-            csi_proposed_kernel['current'] = norm.logpdf(x = np.sqrt(self.v_csi)*(self.csi_array[s] + self.sigma_array[s])/(self.M - self.u_array[s])) 
-            csi_proposed_kernel['prop'] = norm.logpdf(x = np.sqrt(self.v_csi)*(csi_potential + self.sigma_array[s])/(self.M - self.u_array[s]))
+            csi_proposed_kernel['current'] = norm.logpdf(x = self.csi_array[s] - inf_limit/np.sqrt(self.v_csi))
+            csi_proposed_kernel['prop'] = norm.logpdf(x = csi_potential - inf_limit/np.sqrt(self.v_csi))
             
+            # compute metropolis ratio
             csi_metropolis_output = self.metropolis_step(csi_potential, self.csi_array[s], csi_posterior_kernel, csi_proposed_kernel)
-            self.csi_array = np.insert(self.csi_array, obj = self.csi_array.shape[0], values = csi_metropolis_output, axis = 0)
+
+            return csi_metropolis_output
             
+    def draw_sigma(self, s):
+
+        self.v_sigma = np.sqrt(1)
+        inf_limit = -self.csi_array[s+1]*(self.M - self.u_array[s])
+        sup_limit = np.inf
+        sigma_posterior_kernel = {}
+        sigma_proposed_kernel = {}
+        
+        if self.csi_array[s+1] > 0:
+
+            sigma_potential = gamma.rvs(self.sigma_array[s], ((self.sigma_array[s])**2)/self.v_sigma)
+            sigma_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s], 
+                                                                    self.csi_array[s+1], self.sigma_array[s], self.prior_values['a_prior'], 
+                                                                    self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                    self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                    self.prior_values['sigma_u'])
+        
+            sigma_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s], 
+                                                                    self.csi_array[s+1], sigma_potential, self.prior_values['a_prior'], 
+                                                                    self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                    self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                    self.prior_values['sigma_u'])
+            
+            sigma_proposed_kernel['current'] = gamma.logpdf(self.sigma_array[s], sigma_potential, (sigma_potential**2)/self.v_sigma)
+            sigma_proposed_kernel['prop'] = gamma.logpdf(self.sigma_array[s], self.sigma_array[s], (self.sigma_array[s]**2)/self.v_sigma)
+            
+            # compute metropolis ratio
+            sigma_metropolis_output = self.metropolis_step(sigma_potential, self.sigma_array[s], sigma_posterior_kernel, sigma_proposed_kernel)
+
+            return sigma_metropolis_output
+        else:
+            sigma_potential = truncnorm.rvs(a = inf_limit , b = sup_limit, loc = self.sigma_array[s], scale = self.v_sigma)
+
+            sigma_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s], 
+                                                                        self.csi_array[s+1], self.sigma_array[s], self.prior_values['a_prior'], 
+                                                                        self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                        self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                        self.prior_values['sigma_u'])
+            
+            sigma_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s], 
+                                                                        self.csi_array[s+1], sigma_potential, self.prior_values['a_prior'], 
+                                                                        self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                        self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                        self.prior_values['sigma_u'])
+            
+            sigma_proposed_kernel['current'] = norm.logpdf(x = self.sigma_array[s] - inf_limit/np.sqrt(self.v_sigma)) 
+            sigma_proposed_kernel['prop'] = norm.logpdf(x = sigma_potential - inf_limit/np.sqrt(self.v_sigma))
+            
+            # compute metropolis ratio
+            sigma_metropolis_output = self.metropolis_step(sigma_potential, self.sigma_array[s], sigma_posterior_kernel, sigma_proposed_kernel)
+
+            return sigma_metropolis_output
+
+    def fit(self):
+
+        for s in range(self.n_iteration):
+
+            # draw from csi
+            csi_sample = self.draw_csi(s)
+            self.csi_array = np.insert(self.csi_array, obj = self.csi_array.shape[0], values = csi_sample, axis = 0)
+
             #draw from sigma
-            
+            sigma_sample = self.draw_sigma(s)
+            self.sigma_array = np.insert(self.sigma_array, obj = self.sigma_array.shape[0], values = sigma_sample, axis = 0)
             #draw from u
             
             #draw from (mu_j, eta_j)
