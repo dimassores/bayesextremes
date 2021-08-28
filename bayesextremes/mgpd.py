@@ -17,22 +17,22 @@ class MGPD:
 
         # set initial values for the parameters
         self.p_array = np.array([[(1/self.k)]*self.k], dtype = np.float32)
-        self.mu_array = np.array([[0]*self.k], dtype = np.float32)
-        self.eta_array = np.array([[0]*self.k], dtype = np.float32)
+        self.mu_array = np.array([[value + 1 for value in range(self.k)]], dtype = np.float32)
+        self.eta_array = np.array([[1]*self.k], dtype = np.float32)
         self.u_array = np.array([[1]], dtype = np.float32)
         self.csi_array = np.array([[1]], dtype = np.float32)
         self.sigma_array = np.array([[1]], dtype = np.float32)
         
         # latent values used in metropolis hastings steps
         self.M = max(self.data)
-        self.v_csi = np.sqrt(1)
-        self.v_sigma = np.sqrt(1)
-        self.v_u = np.sqrt(1)
-        self.v_eta = np.sqrt(1)
-        self.v_mu = np.sqrt(1)
-        self.v_p = np.sqrt(1)
+        self.v_csi = np.sqrt(10)
+        self.v_sigma = 10
+        self.v_u = np.sqrt(10)
+        self.v_eta = 5
+        self.v_mu = 10
+        self.v_p = np.sqrt(3)
 
-    def log_mpgd_posterior_kernel(self, p, mu, eta, u, csi, sigma, a_prior, b_prior, c_prior, d_prior, mu_u, sigma_u):
+    def log_mpgd_posterior_kernel(self, data, p, mu, eta, u, csi, sigma, a_prior, b_prior, c_prior, d_prior, mu_u, sigma_u):
 
         '''
         data: observed values
@@ -208,110 +208,111 @@ class MGPD:
         u_metropolis_output = self.metropolis_step(u_potential, self.u_array[s], u_posterior_kernel, u_proposed_kernel)
         return u_metropolis_output
 
+    def draw_eta(self, s):
+        eta_posterior_kernel = {}
+        eta_proposed_kernel = {}
 
-    def draw_mu_eta(self, s):
-        eta_potential = gamma.rvs(a = self.eta_array[s], scale = self.v_eta/(self.eta_array[s])**2)
-
-        final_mu = []
-        final_eta = []
-        for j in range(len(self.k)):
-            mu_posterior_kernel = {}
-            mu_proposed_kernel = {}
-            mu_potential = gamma.rvs(a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2)
-
-            if j == 0:
-                if mu_potential < self.mu_array[s][j+1]:
-                    mu_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s][j], self.eta_array[s][j], self.u_array[s+1], 
-                                                                        self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
-                                                                        self.prior_values['b_prior'], self.prior_values['c_prior'], 
-                                                                        self.prior_values['d_prior'], self.prior_values['mu_u'], 
-                                                                        self.prior_values['sigma_u'])
-            
-                    mu_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], mu_potential, eta_potential[j], self.u_array[s+1], 
-                                                                                self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
-                                                                                self.prior_values['b_prior'], self.prior_values['c_prior'], 
-                                                                                self.prior_values['d_prior'], self.prior_values['mu_u'], 
-                                                                                self.prior_values['sigma_u'])
-                    
-                    mu_proposed_kernel['current'] = (gamma.logpdf(x = self.mu_array[s][j], a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
-                                                    + gamma.logpdf(x = self.eta_array[s][j], a = self.eta_array[s][j], scale = self.v_eta/(self.eta_array[s][j])**2))
-
-                    mu_proposed_kernel['prop'] = (gamma.logpdf(x = mu_potential, a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
-                                                    + gamma.logpdf(x = eta_potential[j], a = self.eta_array[s][j], scale = self.v_eta/(self.eta_array[s][j])**2))
-
-                    
-                    mu_metropolis_output, eta_metropolis_output = self.metropolis_step((mu_potential, eta_potential[j]), (self.mu_array[s][j], self.eta_array[s][j]), mu_posterior_kernel, mu_proposed_kernel)
-                    
-                    final_mu.append(mu_metropolis_output)
-                    final_eta.append(eta_metropolis_output)
-
-                else:
-                    final_mu.append(self.mu_array[s][j])
-                    final_eta.append(self.eta_array[s][j])
-            else: 
-                if (mu_potential > self.mu_array[s][j-1]) and (mu_potential < self.mu_array[s][j+1]):
-                    mu_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s][j], self.eta_array[s][j], self.u_array[s+1], 
-                                                                        self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
-                                                                        self.prior_values['b_prior'], self.prior_values['c_prior'], 
-                                                                        self.prior_values['d_prior'], self.prior_values['mu_u'], 
-                                                                        self.prior_values['sigma_u'])
-            
-                    mu_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], mu_potential, eta_potential[j], self.u_array[s+1], 
-                                                                                self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
-                                                                                self.prior_values['b_prior'], self.prior_values['c_prior'], 
-                                                                                self.prior_values['d_prior'], self.prior_values['mu_u'], 
-                                                                                self.prior_values['sigma_u'])
-                    
-                    mu_proposed_kernel['current'] = (gamma.logpdf(x = self.mu_array[s][j], a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
-                                                    + gamma.logpdf(x = self.eta_array[s][j], a = self.eta_array[s][j], scale = self.v_eta/(self.eta_array[s][j])**2))
-
-                    mu_proposed_kernel['prop'] = (gamma.logpdf(x = mu_potential, a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
-                                                    + gamma.logpdf(x = eta_potential[j], a = self.eta_array[s][j], scale = self.v_eta/(self.eta_array[s][j])**2))
-
-                    
-                    mu_metropolis_output, eta_metropolis_output = self.metropolis_step((mu_potential, eta_potential[j]), (self.mu_array[s][j], self.eta_array[s][j]), mu_posterior_kernel, mu_proposed_kernel)
-                    
-                    final_mu.append(mu_metropolis_output)
-                    final_eta.append(eta_metropolis_output)
-                else:
-                    final_mu.append(self.mu_array[s][j])
-                    final_eta.append(self.eta_array[s][j])
-
-        return np.array(final_mu), np.array(final_eta)
-
-    def draw_p(self, s):
-
-        p_posterior_kernel = {}
-        p_proposed_kernel = {}
-
-        
+    
         # sample potential
-        p_potential = dirichlet.rvs(self.v_p*self.p_array[s])
+        eta_potential = gamma.rvs(a = self.eta_array[s], scale = self.v_eta/(self.eta_array[s])**2)[0]
 
-        p_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s+1], self.eta_array[s+1], self.u_array[s+1], 
+        eta_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], self.eta_array[s], self.u_array[s+1], 
                                                                         self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
                                                                         self.prior_values['b_prior'], self.prior_values['c_prior'], 
                                                                         self.prior_values['d_prior'], self.prior_values['mu_u'], 
                                                                         self.prior_values['sigma_u'])
             
-        p_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, p_potential, self.mu_array[s+1], self.eta_array[s+1], self.u_array[s+1], 
+        eta_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s], eta_potential, self.u_array[s+1], 
                                                                     self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
                                                                     self.prior_values['b_prior'], self.prior_values['c_prior'], 
                                                                     self.prior_values['d_prior'], self.prior_values['mu_u'], 
                                                                     self.prior_values['sigma_u'])
         
-        p_proposed_kernel['current'] = dirichlet.logpdf(self.p_array[s]) 
-        p_proposed_kernel['prop'] = dirichlet.logpdf(p_potential) 
+        eta_proposed_kernel['current'] = np.sum(gamma.logpdf(x = self.eta_array[s], a = self.eta_array[s], scale = self.v_eta/(self.eta_array[s])**2))
+        eta_proposed_kernel['prop'] = np.sum(gamma.logpdf(x = eta_potential, a = self.eta_array[s], scale = self.v_eta/(self.eta_array[s])**2))
+        
+        print(eta_posterior_kernel)
+        eta_metropolis_output = self.metropolis_step(eta_potential, self.eta_array[s], eta_posterior_kernel, eta_proposed_kernel)
+        return eta_metropolis_output
 
-        p_metropolis_output = self.metropolis_step(p_potential, self.p_array[s], p_posterior_kernel, p_proposed_kernel)
+    def draw_mu(self, s):
+        
+        final_mu = []
+        for j in range(self.k):
+            mu_posterior_kernel = {}
+            mu_proposed_kernel = {}
+            mu_potential = gamma.rvs(a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2)
+            
+            if j == 0:
+                lower_bool = True
+                upper_bool = (mu_potential < self.mu_array[s][j+1])
+            elif j == self.k - 1:
+                lower_bool = (mu_potential > self.mu_array[s][j-1])
+                upper_bool = True
+            else:
+                lower_bool = (mu_potential > self.mu_array[s][j-1])
+                upper_bool = (mu_potential < self.mu_array[s][j+1])
+            if lower_bool and upper_bool:
+                
+                mu_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s][j], self.eta_array[s+1][j], self.u_array[s+1], 
+                                                                    self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
+                                                                    self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                    self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                    self.prior_values['sigma_u'])
+        
+                mu_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], mu_potential, self.eta_array[s+1][j], self.u_array[s+1], 
+                                                                            self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
+                                                                            self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                            self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                            self.prior_values['sigma_u'])
+                
+                mu_proposed_kernel['current'] = gamma.logpdf(x = self.mu_array[s][j], a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
+                mu_proposed_kernel['prop'] = gamma.logpdf(x = mu_potential, a = self.mu_array[s][j], scale = self.v_mu/(self.mu_array[s][j])**2) 
 
+                mu_metropolis_output = self.metropolis_step(mu_potential, self.mu_array[s][j], mu_posterior_kernel, mu_proposed_kernel)
+                
+                final_mu.append(mu_metropolis_output)
+            else:
+                final_mu.append(self.mu_array[s][j])
+
+        return np.array(final_mu)
+
+    def draw_p(self, s):
+
+        p_posterior_kernel = {}
+        p_proposed_kernel = {}
+        
+        
+        # sample potential
+        p_potential = dirichlet.rvs(alpha = self.v_p*self.p_array[s])
+        
+        if (p_potential < 0.05).any():
+            p_metropolis_output = self.p_array[s]
+        else:
+            p_posterior_kernel['current'] = self.log_mpgd_posterior_kernel(self.data, self.p_array[s], self.mu_array[s+1], self.eta_array[s+1], self.u_array[s+1], 
+                                                                            self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
+                                                                            self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                            self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                            self.prior_values['sigma_u'])
+
+            p_posterior_kernel['prop'] = self.log_mpgd_posterior_kernel(self.data, p_potential, self.mu_array[s+1], self.eta_array[s+1], self.u_array[s+1], 
+                                                                        self.csi_array[s+1], self.sigma_array[s+1], self.prior_values['a_prior'], 
+                                                                        self.prior_values['b_prior'], self.prior_values['c_prior'], 
+                                                                        self.prior_values['d_prior'], self.prior_values['mu_u'], 
+                                                                        self.prior_values['sigma_u'])
+
+            p_proposed_kernel['current'] = dirichlet.logpdf(x = self.p_array[s], alpha = self.v_p*self.p_array[s]) 
+            p_proposed_kernel['prop'] = dirichlet.logpdf(x = p_potential[0], alpha = self.v_p*self.p_array[s]) 
+
+            p_metropolis_output = self.metropolis_step(p_potential, self.p_array[s], p_posterior_kernel, p_proposed_kernel)
+        
         return p_metropolis_output
 
 
     def fit(self):
 
         for s in range(self.n_iteration):
-            
+            print(s)
             # draw from csi
             csi_sample = self.draw_csi(s)
             self.csi_array = np.insert(self.csi_array, obj = self.csi_array.shape[0], values = csi_sample, axis = 0)
@@ -323,17 +324,20 @@ class MGPD:
             # draw from u
             u_sample  = self.draw_u(s)
             self.u_array = np.insert(self.u_array, obj = self.u_array.shape[0], values = u_sample, axis = 0)
+            
+            # draw from eta
+            eta_sample  = self.draw_eta(s)
+            self.eta_array = np.insert(self.eta_array, obj = self.eta_array.shape[0], values = eta_sample, axis = 0)
 
             # draw from mu and eta
-            mu_sample, eta_sample  = self.draw_mu_eta(s)
-            self.eta_array = np.insert(self.eta_array, obj = self.eta_array.shape[0], values = eta_sample, axis = 0)
+            mu_sample  = self.draw_mu(s)
             self.mu_array = np.insert(self.mu_array, obj = self.mu_array.shape[0], values = mu_sample, axis = 0)
             
             # draw from p
-
             p_sample = self.draw_p(s)
             self.p_array = np.insert(self.p_array, obj = self.p_array.shape[0], values = p_sample, axis = 0)
-
+            
+    
     def get_p_chain(self):
         return self.p_array
 
