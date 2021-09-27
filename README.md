@@ -11,4 +11,6 @@ These repository has my personal exploration of bayesian techniques to deal with
 
 # References 
 [1] do Nascimento, F.F., Gamerman, D. and Lopes, H.F., 2012. A semiparametric Bayesian approach to extreme value estimation. Statistics and Computing, 22(2), pp.661-675.
+
+
 [2] De Haan, L., Ferreira, A. and Ferreira, A., 2006. Extreme value theory: an introduction (Vol. 21). New York: Springer.
