@@ -1,4 +1,4 @@
-# Baysian Exploration for Extreme Values
+# Bayesian Exploration for Extreme Values
 
 These repository has my personal exploration of bayesian techniques to deal with extreme values. To do so, traditional approach are implemented based on extreme value theory or in some hypotesis on data distribution. Most of the models are implemented using PyMC3. Some models are implemented from scratch based on MCMC algorithms to estimate the full posterior distribution. 
 
