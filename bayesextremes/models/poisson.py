@@ -5,7 +5,7 @@ This module implements Poisson mixture models for count data with extreme values
 including both simple mixture and regression approaches.
 """
 
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Tuple, Union, List, Dict, Any
 import numpy as np
 from scipy.stats import poisson
 from .base import BaseModel
@@ -49,11 +49,6 @@ class PoissonMixture(BaseModel):
         self.rate2 = np.max(data)   # Rate for second component
         self.weight = 0.5           # Mixture weight
         
-        # Initialize traces
-        self.rate1_trace = []
-        self.rate2_trace = []
-        self.weight_trace = []
-        
     def log_likelihood(self) -> float:
         """Compute the log-likelihood of the Poisson mixture model."""
         log_lik = 0.0
@@ -75,7 +70,7 @@ class PoissonMixture(BaseModel):
         log_prior += (self.weight_prior[1] - 1) * np.log(1 - self.weight)
         return log_prior
     
-    def metropolis_step(self, param: str) -> bool:
+    def _metropolis_step(self, param: str) -> bool:
         """
         Perform a Metropolis-Hastings step for a given parameter.
         
@@ -112,54 +107,59 @@ class PoissonMixture(BaseModel):
     
     def fit(self) -> None:
         """Fit the Poisson mixture model using MCMC."""
-        for _ in range(self.n_iterations):
+        for i in range(self.n_iterations):
             # Update parameters
-            self.metropolis_step('rate1')
-            self.metropolis_step('rate2')
-            self.metropolis_step('weight')
+            self._metropolis_step('rate1')
+            self._metropolis_step('rate2')
+            self._metropolis_step('weight')
             
-            # Store traces after burn-in
-            if _ >= self.burn_in:
-                self.rate1_trace.append(self.rate1)
-                self.rate2_trace.append(self.rate2)
-                self.weight_trace.append(self.weight)
+            # Update traces
+            self._update_trace('rate1', self.rate1, i)
+            self._update_trace('rate2', self.rate2, i)
+            self._update_trace('weight', self.weight, i)
     
-    def predict_probability(self, x: int) -> float:
+    def predict(self, x: np.ndarray) -> np.ndarray:
         """
-        Predict the probability of observing a count x.
+        Predict the probability density for new data.
         
         Parameters
         ----------
-        x : int
-            Count value to predict probability for
+        x : np.ndarray
+            New data points
             
         Returns
         -------
-        float
-            Predicted probability
+        np.ndarray
+            Predicted probability densities
         """
-        return (
-            np.mean(self.weight_trace) * poisson.pmf(x, np.mean(self.rate1_trace)) +
-            (1 - np.mean(self.weight_trace)) * poisson.pmf(x, np.mean(self.rate2_trace))
-        )
+        return np.array([
+            self.weight * poisson.pmf(xi, self.rate1) +
+            (1 - self.weight) * poisson.pmf(xi, self.rate2)
+            for xi in x
+        ])
     
-    @property
-    def parameter_estimates(self) -> dict:
-        """Get the parameter estimates from the MCMC chains."""
-        return {
-            'rate1': np.mean(self.rate1_trace),
-            'rate2': np.mean(self.rate2_trace),
-            'weight': np.mean(self.weight_trace)
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of the model fit including component probabilities.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Summary statistics including parameter estimates and component probabilities
+        """
+        summary = super().get_summary()
+        
+        # Add component probabilities for common values
+        common_values = [0, 1, 2, 5, 10]
+        summary['component_probabilities'] = {
+            f'x={x}': {
+                'component1': poisson.pmf(x, self.rate1),
+                'component2': poisson.pmf(x, self.rate2)
+            }
+            for x in common_values
         }
-    
-    @property
-    def parameter_credible_intervals(self) -> dict:
-        """Get the 95% credible intervals for the parameters."""
-        return {
-            'rate1': np.percentile(self.rate1_trace, [2.5, 97.5]),
-            'rate2': np.percentile(self.rate2_trace, [2.5, 97.5]),
-            'weight': np.percentile(self.weight_trace, [2.5, 97.5])
-        }
+        
+        return summary
 
 class PoissonMixtureRegression(BaseModel):
     """
@@ -203,11 +203,6 @@ class PoissonMixtureRegression(BaseModel):
         self.beta2 = np.zeros(covariates.shape[1])  # Coefficients for second component
         self.weight = 0.5                          # Mixture weight
         
-        # Initialize traces
-        self.beta1_trace = []
-        self.beta2_trace = []
-        self.weight_trace = []
-        
     def compute_rates(self, beta: np.ndarray) -> np.ndarray:
         """Compute rates from covariates and coefficients."""
         return np.exp(self.covariates @ beta)
@@ -236,7 +231,7 @@ class PoissonMixtureRegression(BaseModel):
         log_prior += (self.weight_prior[1] - 1) * np.log(1 - self.weight)
         return log_prior
     
-    def metropolis_step(self, param: str) -> bool:
+    def _metropolis_step(self, param: str) -> bool:
         """
         Perform a Metropolis-Hastings step for a given parameter.
         
@@ -250,49 +245,43 @@ class PoissonMixtureRegression(BaseModel):
         bool
             Whether the proposal was accepted
         """
+        current_value = getattr(self, param)
         if param == 'weight':
-            current_value = self.weight
-            proposal = np.random.beta(2, 2)
-            self.weight = proposal
+            proposal = np.random.beta(2, 2)  # Beta proposal for weight
         else:
-            current_value = getattr(self, param)
-            proposal = current_value + np.random.normal(0, 0.1, size=current_value.shape)
-            setattr(self, param, proposal)
+            proposal = np.random.normal(current_value, 0.1)  # Normal proposal for coefficients
         
+        # Store current value and set proposal
+        setattr(self, param, proposal)
         proposal_log_posterior = self.log_likelihood() + self.log_prior()
         
-        if param == 'weight':
-            self.weight = current_value
-        else:
-            setattr(self, param, current_value)
+        # Restore current value
+        setattr(self, param, current_value)
         current_log_posterior = self.log_likelihood() + self.log_prior()
         
+        # Accept or reject
         log_ratio = proposal_log_posterior - current_log_posterior
         if np.log(np.random.random()) < log_ratio:
-            if param == 'weight':
-                self.weight = proposal
-            else:
-                setattr(self, param, proposal)
+            setattr(self, param, proposal)
             return True
         return False
     
     def fit(self) -> None:
         """Fit the Poisson mixture regression model using MCMC."""
-        for _ in range(self.n_iterations):
+        for i in range(self.n_iterations):
             # Update parameters
-            self.metropolis_step('beta1')
-            self.metropolis_step('beta2')
-            self.metropolis_step('weight')
+            self._metropolis_step('beta1')
+            self._metropolis_step('beta2')
+            self._metropolis_step('weight')
             
-            # Store traces after burn-in
-            if _ >= self.burn_in:
-                self.beta1_trace.append(self.beta1.copy())
-                self.beta2_trace.append(self.beta2.copy())
-                self.weight_trace.append(self.weight)
+            # Update traces
+            self._update_trace('beta1', self.beta1, i)
+            self._update_trace('beta2', self.beta2, i)
+            self._update_trace('weight', self.weight, i)
     
     def predict(self, covariates: np.ndarray) -> np.ndarray:
         """
-        Predict expected counts for new covariates.
+        Predict the probability density for new data.
         
         Parameters
         ----------
@@ -302,31 +291,37 @@ class PoissonMixtureRegression(BaseModel):
         Returns
         -------
         np.ndarray
-            Predicted expected counts
+            Predicted probability densities
         """
-        beta1_mean = np.mean(self.beta1_trace, axis=0)
-        beta2_mean = np.mean(self.beta2_trace, axis=0)
-        weight_mean = np.mean(self.weight_trace)
+        rates1 = np.exp(covariates @ self.beta1)
+        rates2 = np.exp(covariates @ self.beta2)
         
-        rates1 = np.exp(covariates @ beta1_mean)
-        rates2 = np.exp(covariates @ beta2_mean)
-        
-        return weight_mean * rates1 + (1 - weight_mean) * rates2
+        return np.array([
+            self.weight * poisson.pmf(x, r1) + (1 - self.weight) * poisson.pmf(x, r2)
+            for x, r1, r2 in zip(self.data, rates1, rates2)
+        ])
     
-    @property
-    def parameter_estimates(self) -> dict:
-        """Get the parameter estimates from the MCMC chains."""
-        return {
-            'beta1': np.mean(self.beta1_trace, axis=0),
-            'beta2': np.mean(self.beta2_trace, axis=0),
-            'weight': np.mean(self.weight_trace)
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of the model fit including coefficient estimates.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Summary statistics including coefficient estimates and mixture weight
+        """
+        summary = super().get_summary()
+        
+        # Add coefficient interpretations
+        summary['coefficient_interpretations'] = {
+            'beta1': {
+                'mean': np.mean(self.beta1),
+                'effect': f"1 unit increase in covariate multiplies rate by {np.exp(np.mean(self.beta1)):.2f}"
+            },
+            'beta2': {
+                'mean': np.mean(self.beta2),
+                'effect': f"1 unit increase in covariate multiplies rate by {np.exp(np.mean(self.beta2)):.2f}"
+            }
         }
-    
-    @property
-    def parameter_credible_intervals(self) -> dict:
-        """Get the 95% credible intervals for the parameters."""
-        return {
-            'beta1': np.percentile(self.beta1_trace, [2.5, 97.5], axis=0),
-            'beta2': np.percentile(self.beta2_trace, [2.5, 97.5], axis=0),
-            'weight': np.percentile(self.weight_trace, [2.5, 97.5])
-        } 
+        
+        return summary 

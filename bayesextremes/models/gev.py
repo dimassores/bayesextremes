@@ -5,7 +5,7 @@ This module implements the GEV distribution for extreme value analysis using bot
 maximum likelihood and Bayesian approaches.
 """
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Dict, Any
 import numpy as np
 from scipy.stats import genextreme
 from .base import BaseModel
@@ -53,11 +53,6 @@ class GEV(BaseModel):
         self.sigma = 1.0  # Scale parameter
         self.mu = 0.0  # Location parameter
         
-        # Initialize traces
-        self.xi_trace = []
-        self.sigma_trace = []
-        self.mu_trace = []
-        
     def log_likelihood(self) -> float:
         """Compute the log-likelihood of the GEV model."""
         return np.sum(genextreme.logpdf(
@@ -69,16 +64,24 @@ class GEV(BaseModel):
     
     def log_prior(self) -> float:
         """Compute the log-prior of the GEV model."""
+        # Check for invalid parameters
+        if self.sigma <= 0:
+            return -np.inf
+            
         log_prior = 0.0
-        # Shape parameter prior (normal)
-        log_prior += -0.5 * ((self.xi - self.shape_prior[0]) / self.shape_prior[1])**2
-        # Scale parameter prior (log-normal)
-        log_prior += -0.5 * ((np.log(self.sigma) - self.scale_prior[0]) / self.scale_prior[1])**2
-        # Location parameter prior (normal)
-        log_prior += -0.5 * ((self.mu - self.loc_prior[0]) / self.loc_prior[1])**2
+        try:
+            # Shape parameter prior (normal)
+            log_prior += -0.5 * ((self.xi - self.shape_prior[0]) / self.shape_prior[1])**2
+            # Scale parameter prior (log-normal)
+            log_prior += -0.5 * ((np.log(self.sigma) - self.scale_prior[0]) / self.scale_prior[1])**2
+            # Location parameter prior (normal)
+            log_prior += -0.5 * ((self.mu - self.loc_prior[0]) / self.loc_prior[1])**2
+        except (ValueError, RuntimeWarning):
+            return -np.inf
+            
         return log_prior
     
-    def metropolis_step(self, param: str) -> bool:
+    def _metropolis_step(self, param: str) -> bool:
         """
         Perform a Metropolis-Hastings step for a given parameter.
         
@@ -114,17 +117,32 @@ class GEV(BaseModel):
     
     def fit(self) -> None:
         """Fit the GEV model using MCMC."""
-        for _ in range(self.n_iterations):
+        for i in range(self.n_iterations):
             # Update parameters
-            self.metropolis_step('xi')
-            self.metropolis_step('sigma')
-            self.metropolis_step('mu')
+            self._metropolis_step('xi')
+            self._metropolis_step('sigma')
+            self._metropolis_step('mu')
             
-            # Store traces after burn-in
-            if _ >= self.burn_in:
-                self.xi_trace.append(self.xi)
-                self.sigma_trace.append(self.sigma)
-                self.mu_trace.append(self.mu)
+            # Update traces
+            self._update_trace('xi', self.xi, i)
+            self._update_trace('sigma', self.sigma, i)
+            self._update_trace('mu', self.mu, i)
+    
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        """
+        Predict the probability density for new data.
+        
+        Parameters
+        ----------
+        x : np.ndarray
+            New data points
+            
+        Returns
+        -------
+        np.ndarray
+            Predicted probability densities
+        """
+        return genextreme.pdf(x, c=self.xi, loc=self.mu, scale=self.sigma)
     
     def predict_return_level(self, return_period: float) -> float:
         """
@@ -139,25 +157,35 @@ class GEV(BaseModel):
         -------
         float
             Predicted return level
+            
+        Raises
+        ------
+        ValueError
+            If return_period is less than or equal to 1
         """
+        if return_period <= 1:
+            raise ValueError("return_period must be greater than 1")
+            
         if self.xi == 0:
             return self.mu - self.sigma * np.log(-np.log(1 - 1/return_period))
         return self.mu + self.sigma/self.xi * ((-np.log(1 - 1/return_period))**(-self.xi) - 1)
     
-    @property
-    def parameter_estimates(self) -> dict:
-        """Get the parameter estimates from the MCMC chains."""
-        return {
-            'xi': np.mean(self.xi_trace),
-            'sigma': np.mean(self.sigma_trace),
-            'mu': np.mean(self.mu_trace)
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get a summary of the model fit including return levels.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Summary statistics including parameter estimates and return levels
+        """
+        summary = super().get_summary()
+        
+        # Add return levels for common return periods
+        return_periods = [10, 50, 100]
+        summary['return_levels'] = {
+            f'{period}-year': self.predict_return_level(period)
+            for period in return_periods
         }
-    
-    @property
-    def parameter_credible_intervals(self) -> dict:
-        """Get the 95% credible intervals for the parameters."""
-        return {
-            'xi': np.percentile(self.xi_trace, [2.5, 97.5]),
-            'sigma': np.percentile(self.sigma_trace, [2.5, 97.5]),
-            'mu': np.percentile(self.mu_trace, [2.5, 97.5])
-        } 
+        
+        return summary 
