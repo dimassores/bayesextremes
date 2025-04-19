@@ -6,11 +6,12 @@ A Python package for Bayesian analysis of extreme values.
 
 BayesExtremes is a comprehensive package for Bayesian analysis of extreme values, implementing various models for extreme value analysis including:
 
+- Mixed Gamma-Pareto Distribution Model
 - Generalized Extreme Value (GEV) distribution
-- Mixed Gamma-Generalized Pareto Distribution (MGPD)
-- Gamma Mixture Model
 - Poisson Mixture Model
 - Poisson Mixture Regression Model
+
+All models are built on a common base class that provides shared functionality for Bayesian inference, including MCMC sampling and parameter estimation.
 
 ## Features
 
@@ -30,6 +31,44 @@ pip install bayesextremes
 ```
 
 ## Usage
+
+### Mixed Gamma-Pareto Model
+
+```python
+import numpy as np
+from bayesextremes.models import MixedGammaParetoModel
+
+# Generate some example data
+data = np.random.gamma(shape=2, scale=1, size=1000)
+
+# Initialize model with prior values
+prior_values = {
+    'a_mu': np.array([2.0, 3.0]),
+    'b_mu': np.array([1.0, 1.0]),
+    'c_eta': np.array([2.0, 2.0]),
+    'd_eta': np.array([1.0, 1.0]),
+    'alpha_p': np.array([1.0, 1.0]),
+    'mu_u': np.percentile(data, 90),
+    'sigma_u': 1.0
+}
+
+# Initialize and fit the model
+model = MixedGammaParetoModel(
+    data=data,
+    k=2,
+    prior_values=prior_values,
+    n_iterations=1000,
+    burn_in=100,
+    thin=10
+)
+model.fit()
+
+# Get parameter estimates and summary statistics
+summary = model.get_summary()
+print(f"Shape parameters: {summary['etas']['mean']}")
+print(f"Scale parameters: {summary['mus']['mean']}")
+print(f"Mixing weights: {summary['ps']['mean']}")
+```
 
 ### GEV Model
 
@@ -55,34 +94,23 @@ return_level = model.predict_return_level(100)  # 100-year return level
 print(f"100-year return level: {return_level:.3f}")
 ```
 
-### MGPD Model
+### Poisson Mixture Model
 
 ```python
-from bayesextremes.models import MGPD
+from bayesextremes.models import PoissonMixture
 import numpy as np
-from scipy.stats import gamma, genpareto
 
-# Generate sample data from mixture of Gamma and GPD
-bulk_data = np.concatenate([
-    gamma.rvs(a=2, scale=1, size=450),
-    gamma.rvs(a=5, scale=2, size=450)
-])
-tail_data = genpareto.rvs(c=0.5, loc=0, scale=1, size=100)
-data = np.concatenate([bulk_data, tail_data])
+# Generate sample data
+data = np.random.poisson(lam=[5, 10], size=(100, 2))
 
 # Initialize and fit the model
-model = MGPD(data)
+model = PoissonMixture(data, k=2)
 model.fit()
 
 # Get parameter estimates
-estimates = model.parameter_estimates
-print(f"Shape parameter (xi): {estimates['xi']:.3f}")
-print(f"Scale parameter (sigma): {estimates['sigma']:.3f}")
-print(f"Threshold (u): {estimates['u']:.3f}")
-
-# Predict return levels
-return_level = model.predict_return_level(100)  # 100-year return level
-print(f"100-year return level: {return_level:.3f}")
+summary = model.get_summary()
+print(f"Mixture weights: {summary['ps']['mean']}")
+print(f"Rate parameters: {summary['lambdas']['mean']}")
 ```
 
 ## Development
@@ -109,7 +137,7 @@ pre-commit install
 
 Run the test suite:
 ```bash
-pytest
+pytest tests/
 ```
 
 ### Documentation
@@ -120,13 +148,13 @@ cd docs
 make html
 ```
 
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Citation
 
