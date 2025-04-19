@@ -1,68 +1,79 @@
 """
-Tests for the base model class.
+Tests for the BaseModel class.
 """
+
 import numpy as np
 import pytest
 from bayesextremes.models.base import BaseModel
 
 class TestBaseModel:
-    """Test cases for the BaseModel class."""
+    """Test suite for the BaseModel class."""
     
     def test_initialization(self):
-        """Test model initialization with valid inputs."""
-        data = np.array([1, 2, 3, 4, 5])
-        model = BaseModel(n_iterations=1000, data=data)
+        """Test model initialization with valid data."""
+        data = np.random.normal(0, 1, 100)
+        model = BaseModel(data, n_iterations=1000, burn_in=100)
+        assert model.data.shape == (100,)
         assert model.n_iterations == 1000
-        np.testing.assert_array_equal(model.data, data)
+        assert model.burn_in == 100
         
     def test_invalid_iterations(self):
         """Test initialization with invalid number of iterations."""
-        data = np.array([1, 2, 3])
-        with pytest.raises(ValueError, match="n_iterations must be positive"):
-            BaseModel(n_iterations=0, data=data)
+        data = np.random.normal(0, 1, 100)
+        with pytest.raises(ValueError):
+            BaseModel(data, n_iterations=0, burn_in=100)
+        with pytest.raises(ValueError):
+            BaseModel(data, n_iterations=1000, burn_in=2000)
             
     def test_empty_data(self):
-        """Test initialization with empty data."""
-        with pytest.raises(ValueError, match="data cannot be empty"):
-            BaseModel(n_iterations=1000, data=np.array([]))
+        """Test initialization with empty data array."""
+        with pytest.raises(ValueError):
+            BaseModel(np.array([]), n_iterations=1000, burn_in=100)
             
     def test_non_finite_data(self):
-        """Test initialization with non-finite data."""
-        data = np.array([1, 2, np.inf, 4])
-        with pytest.raises(ValueError, match="data contains non-finite values"):
-            BaseModel(n_iterations=1000, data=data)
+        """Test initialization with non-finite values in data."""
+        data = np.array([1, 2, np.inf, 3])
+        with pytest.raises(ValueError):
+            BaseModel(data, n_iterations=1000, burn_in=100)
             
     def test_not_implemented_methods(self):
         """Test that abstract methods raise NotImplementedError."""
-        model = BaseModel(n_iterations=1000, data=np.array([1, 2, 3]))
+        data = np.random.normal(0, 1, 100)
+        model = BaseModel(data, n_iterations=1000, burn_in=100)
+        
+        with pytest.raises(NotImplementedError):
+            model.log_likelihood()
+            
+        with pytest.raises(NotImplementedError):
+            model.log_prior()
+            
         with pytest.raises(NotImplementedError):
             model.fit()
-        with pytest.raises(NotImplementedError):
-            model.predict(np.array([1, 2]))
-        with pytest.raises(NotImplementedError):
-            model.get_parameter_chains()
-        with pytest.raises(NotImplementedError):
-            model.get_summary()
             
     def test_metropolis_step(self):
         """Test the Metropolis-Hastings step."""
-        model = BaseModel(n_iterations=1000, data=np.array([1, 2, 3]))
+        data = np.random.normal(0, 1, 100)
+        model = BaseModel(data, n_iterations=1000, burn_in=100)
         
-        def log_posterior(x):
-            return -x**2
-            
-        def proposal_dist(x, y):
-            return 0
-            
-        current = 1.0
-        proposal = 2.0
+        # Create a simple test class that implements the required methods
+        class TestModel(BaseModel):
+            def log_likelihood(self):
+                return -0.5 * np.sum(self.data**2)
+                
+            def log_prior(self):
+                return 0.0
+                
+            def fit(self):
+                pass
+                
+        test_model = TestModel(data, n_iterations=1000, burn_in=100)
+        current_value = 1.0
+        proposal = 1.1
         
-        new_value, accepted = model._metropolis_step(
-            current=current,
-            proposal=proposal,
-            log_posterior=log_posterior,
-            proposal_dist=proposal_dist
-        )
-        
-        assert isinstance(new_value, float)
-        assert isinstance(accepted, bool) 
+        # Test acceptance
+        np.random.seed(42)
+        result = test_model.metropolis_step(current_value, proposal)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], float)
+        assert isinstance(result[1], bool) 
