@@ -7,13 +7,13 @@ __author__ = "Dimas Soares"
 __email__ = "dimassoareslima@gmail.com"
 
 from bayesextremes.models import (
-    GammaMixtureModel,
-    PoissonMixtureModel,
-    GeneralizedExtremeValueModel
+    MixedGammaParetoModel,
+    PoissonMixture,
+    GEV
 )
 
 __all__ = [
-    "GammaMixtureModel",
-    "PoissonMixtureModel",
-    "GeneralizedExtremeValueModel"
+    "MixedGammaParetoModel",
+    "PoissonMixture",
+    "GEV"
 ]

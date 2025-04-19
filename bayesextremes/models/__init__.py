@@ -5,13 +5,13 @@ This package provides various models for extreme value analysis using Bayesian a
 """
 
 from .base import BaseModel
-from .mgpd import MGPD
+from .mgpd import MixedGammaParetoModel
 from .gev import GEV
 from .poisson import PoissonMixture, PoissonMixtureRegression
 
 __all__ = [
     'BaseModel',
-    'MGPD',
+    'MixedGammaParetoModel',
     'GEV',
     'PoissonMixture',
     'PoissonMixtureRegression',
